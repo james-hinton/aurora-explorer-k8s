@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image, with GDAL pre-installed
-FROM osgeo/gdal:ubuntu-small-latest
+FROM osgeo/gdal:ubuntu-small-3.6.3
 
 # Set the working directory in the container
 WORKDIR /usr/src/app
