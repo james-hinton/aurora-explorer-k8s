@@ -2,12 +2,13 @@ import boto3
 from datetime import datetime
 import json
 import numpy as np
+import os
 from scipy.interpolate import griddata
 from rasterio.transform import from_origin
 from rasterio.io import MemoryFile
 
 BUCKET_NAME = "aurora-explorer-data"
-PREFIX = "aurora-data-raw/"
+PREFIX = "aurora-data-raw/aurora-data-gridded_20240324"
 
 
 def aurora_intensity_processor(aurora_data):
@@ -93,6 +94,33 @@ def download_latest_s3_file(bucket_name, prefix):
 
     return latest_content
 
+def download_all_s3_files(bucket_name, prefix):
+    """
+    Fetches all files from a specified S3 bucket and prefix, returning their content as a list of JSON objects.
+
+    Args:
+        bucket_name (str): The name of the S3 bucket.
+        prefix (str): The prefix used to filter objects within the bucket.
+
+    Returns:
+        list: A list of JSON objects containing the content of all files.
+    """
+
+    s3 = boto3.client("s3")
+    paginator = s3.get_paginator("list_objects_v2")
+    page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
+
+    all_files = []
+    
+    for page in page_iterator:
+        if "Contents" in page:
+            for obj in page["Contents"]:
+                # Actually process the file at this point
+                obj = s3.get_object(Bucket=bucket_name, Key=obj["Key"])
+                all_files.append(json.loads(obj["Body"].read()))
+
+    return all_files
+
 
 def upload_memory_file_to_s3(memory_file, bucket_name, object_name):
     """
@@ -123,7 +151,7 @@ def main():
     # Process aurora data
     mem_file = aurora_intensity_processor(aurora_data)
 
-    # Genearte file name with timestamp
+    # Generate file name with timestamp
     file_name_with_timestamp = (
         "aurora_intensity_" + datetime.now().strftime("%Y%m%d%H%M%S") + ".tif"
     )
@@ -137,5 +165,33 @@ def main():
     )
 
 
+# Function for downloading and processing all aurora data files
+def process_all_files():
+    """
+    Function that downloads and processes all aurora data files, generating gridded intensity maps for each file and uploading the results to S3.
+    """
+
+    aurora_data_files = download_all_s3_files(BUCKET_NAME, PREFIX)
+    
+    folder_name = f"aurora_intensity_gridded_tiffs_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    os.makedirs(folder_name, exist_ok=True)
+
+    if not aurora_data_files:
+        print("No aurora_data found")
+        return
+
+    for aurora_data in aurora_data_files:
+        # Process aurora data
+        mem_file = aurora_intensity_processor(aurora_data)
+
+        # Generate file name with timestamp
+        file_name_with_timestamp = (
+            "aurora_intensity_" + datetime.now().strftime("%Y%m%d%H%M%S%f") + ".tif"
+        )
+        mem_file.seek(0)
+        with open(folder_name + "/" + file_name_with_timestamp, "wb") as f:
+            f.write(mem_file.read())
+            
+
 if __name__ == "__main__":
-    main()
+    process_all_files()
